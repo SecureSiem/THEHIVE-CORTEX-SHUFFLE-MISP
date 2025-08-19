@@ -310,7 +310,7 @@ services:
      # Database Configuration
      - MYSQL_HOST=mariadb
      - MYSQL_USER=misp
-     - MYSQL_PASSWORD=Testing@123
+     - MYSQL_PASSWORD=Testing123
      - MYSQL_DATABASE=misp
      
      # Redis Configuration
