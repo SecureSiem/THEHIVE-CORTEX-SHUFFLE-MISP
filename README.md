@@ -247,7 +247,7 @@ cortex_analyzers → list of analyzers you want to run.
 
 1. Save the file as wazuh-to-soar-workflow.json.
 
-2. Go to Shuffle → Workflows → Import workflow → Upload JSON.
+2. Go to Shuffle (http://<your-server-ip>:3000) → Workflows → Import workflow → Upload JSON.
 
 3. Shuffle will load the workflow with nodes already built.
 
