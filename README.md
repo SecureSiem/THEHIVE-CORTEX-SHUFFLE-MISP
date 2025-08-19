@@ -107,3 +107,61 @@ Restart Wazuh manager:
     sudo systemctl restart wazuh-manager
     sudo tail -f /var/ossec/logs/integrations.log
 
+# 7. Make TheHive call Cortex automatically
+
+TheHive and Cortex are already linked (we added Cortex in Administration → Cortex Servers earlier). Now we tell TheHive what to do when a new observable (file, URL, hash, etc.) is added.
+
+# Log into TheHive
+
+Open http://<your-server-ip>:9000
+
+Login with your admin credentials (admin / Testing123 from your docker-compose.yml).
+
+# Go to Administration → Analyzers
+
+You’ll see a list of analyzers from Cortex.
+
+Examples: VirusTotal_Url, AbuseIPDB_IP_Analyzer, UrlHaus_Url_Analyzer.
+
+Make sure at least a couple are enabled.
+
+# Create a Case Template
+
+Go to Administration → Case Templates → Add New.
+
+Give it a name (e.g., Wazuh Alert Template).
+
+Add a default tag like From-Wazuh.
+
+Scroll to Observable Analyzers and select analyzers you want to auto-run (e.g., VirusTotal, URLHaus).
+
+Save.
+
+# Test it
+
+Create a case manually (New Case) → Add an observable (Add Observable → enter an IP, domain, hash, etc.).
+
+If your analyzers are set in the template, TheHive will automatically send the observable to Cortex.
+
+You’ll see results come back in the case within a few seconds.
+
+👉 That’s it — now TheHive will automatically enrich new alerts with Cortex!
+
+
+
+# 8. Shuffle Workflow
+
+Wazuh finds something bad (alert 🚨).
+
+Shuffle needs to receive that alert so it can start your workflow (TheHive case, Cortex analysis, MISP lookup).
+
+To do this, Wazuh just has to send the alert to Shuffle’s Webhook URL (like giving a letter to the right mailbox 📬).
+
+The “scary” curl command is simply the postman carrying the letter.
+That’s all it is.
+
+1. Create the script
+
+On your Wazuh agent (or manager), make a new file:
+
+    sudo nano /var/ossec/active-response/bin/send_to_shuffle.py
