@@ -1,0 +1,109 @@
+cat > wazuh-to-soar-workflow.json <<'JSON'
+{
+  "info": {
+    "name": "Wazuh -> TheHive + MISP + Cortex (full)",
+    "description": "Receives Wazuh alert via webhook, creates TheHive case, queries MISP, runs Cortex analyzers and updates the case. Replace URLs and API keys in the 'config' section after import.",
+    "version": "1.0"
+  },
+  "config": {
+    "thehive_url": "http://<THEHIVE_HOST>:9000",
+    "thehive_api_key": "<THEHIVE_API_KEY>",
+    "misp_url": "http://<MISP_HOST>:8080",
+    "misp_api_key": "<MISP_API_KEY>",
+    "cortex_url": "http://<CORTEX_HOST>:9001",
+    "cortex_api_key": "<CORTEX_API_KEY_OR_USERPASS>", 
+    "cortex_analyzers": [
+      "VirusTotal_Hash",
+      "Urlhaus_Url",
+      "AbuseIPDB_IP"
+    ],
+    "tlp": 2,
+    "default_tags": ["Wazuh","Auto"]
+  },
+  "workflow": {
+    "nodes": [
+      {
+        "id": "webhook",
+        "type": "trigger.webhook",
+        "name": "Wazuh Webhook",
+        "config": {
+          "method": "POST",
+          "content_type": "application/json"
+        },
+        "next": ["create_case"]
+      },
+      {
+        "id": "create_case",
+        "type": "action.thehive.create_case",
+        "name": "Create TheHive Case",
+        "config": {
+          "url": "{{config.thehive_url}}",
+          "api_key": "{{config.thehive_api_key}}",
+          "title_template": "[Wazuh] {{payload.rule.description}}",
+          "description_template": "Agent: {{payload.agent.name}}\\nRule id: {{payload.rule.id}}\\nFull alert:\\n{{payload | json}}",
+          "severity": 2,
+          "tlp": "{{config.tlp}}",
+          "tags": "{{config.default_tags}}"
+        },
+        "next": ["extract_iocs"]
+      },
+      {
+        "id": "extract_iocs",
+        "type": "function",
+        "name": "Extract IOCs (hash/ip/url)",
+        "script": "/* simple extraction: prefer sha256, else srcip, else url */\nlet payload = event.payload || {}; let iocs = {};\nif (payload.syscheck && payload.syscheck.sha256) iocs.hash = payload.syscheck.sha256;\nif (payload.srcip) iocs.ip = payload.srcip;\nif (payload.url) iocs.url = payload.url;\nreturn { iocs: iocs, caseId: event.previousResult.id };",
+        "next": ["misp_lookup", "cortex_run"]
+      },
+      {
+        "id": "misp_lookup",
+        "type": "action.misp.search",
+        "name": "MISP Lookup",
+        "config": {
+          "url": "{{config.misp_url}}",
+          "api_key": "{{config.misp_api_key}}",
+          "search_value": "{{result.iocs.hash || result.iocs.ip || result.iocs.url}}"
+        },
+        "next": ["add_misp_results"]
+      },
+      {
+        "id": "add_misp_results",
+        "type": "action.thehive.add_case_note",
+        "name": "Add MISP results to TheHive",
+        "config": {
+          "url": "{{config.thehive_url}}",
+          "api_key": "{{config.thehive_api_key}}",
+          "case_id": "{{result.caseId}}",
+          "message": "MISP lookup results for {{result.iocs.hash || result.iocs.ip || result.iocs.url}}:\\n{{result}}"
+        },
+        "next": []
+      },
+      {
+        "id": "cortex_run",
+        "type": "action.cortex.run_analyzers",
+        "name": "Run Cortex analyzers",
+        "config": {
+          "url": "{{config.cortex_url}}",
+          "api_key": "{{config.cortex_api_key}}",
+          "analyzers": "{{config.cortex_analyzers}}",
+          "data": "{{result.iocs.hash || result.iocs.ip || result.iocs.url}}",
+          "data_type": "auto"
+        },
+        "next": ["add_cortex_results"]
+      },
+      {
+        "id": "add_cortex_results",
+        "type": "action.thehive.add_case_note",
+        "name": "Add Cortex results to TheHive",
+        "config": {
+          "url": "{{config.thehive_url}}",
+          "api_key": "{{config.thehive_api_key}}",
+          "case_id": "{{result.caseId}}",
+          "message": "Cortex results:\\n{{result}}"
+        },
+        "next": []
+      }
+    ],
+    "start": "webhook"
+  }
+}
+JSON
