@@ -1,6 +1,8 @@
 # Hey there! I am vaibhav Handekar, if you have any quetion here you will find me 
 
-    Linkedin: https://www.linkedin.com/in/vaibhav-handekar-b5668925a/
+Linkedin:     
+        
+    https://www.linkedin.com/in/vaibhav-handekar-b5668925a/
     
 # Prepare project
 
