@@ -1,0 +1,72 @@
+#!/var/ossec/framework/python/bin/python3
+# custom-thehive  -- Wazuh -> TheHive (+MISP/Cortex) bridge with .env
+
+import sys, json, os, requests
+from datetime import datetime
+from dotenv import dotenv_values
+
+ENV = dotenv_values("/var/ossec/integrations/soar.env")
+TH_URL = ENV.get("THEHIVE_URL", "").rstrip("/")
+TH_KEY = ENV.get("THEHIVE_API_KEY", "")
+TH_VERIFY = ENV.get("THEHIVE_VERIFY_TLS", "false").lower() == "true"
+TH_TAGS = [t.strip() for t in ENV.get("THEHIVE_TAGS", "").split(",") if t.strip()]
+
+MISP_URL = ENV.get("MISP_URL", "").rstrip("/")
+MISP_KEY = ENV.get("MISP_API_KEY", "")
+MISP_VERIFY = ENV.get("MISP_VERIFY_TLS", "false").lower() == "true"
+
+def post_thehive_case(alert):
+    title = f"[Wazuh] {alert.get('rule',{}).get('description','Alert')} (lvl {alert.get('rule',{}).get('level')})"
+    sev = max(1, min(3, (alert.get('rule',{}).get('level',1)+2)//5))  # map 1-3
+    payload = {
+        "title": title,
+        "severity": sev,
+        "tlp": 2,
+        "tags": TH_TAGS,
+        "status": "New",
+        "description": f"Rule: {alert.get('rule',{})}\nAgent: {alert.get('agent',{})}\nFull log:\n{alert.get('full_log','')}",
+        "source": "Wazuh",
+        "taskRule": [],
+    }
+    r = requests.post(
+        f"{TH_URL}/api/v1/case",
+        headers={"Authorization": f"Bearer {TH_KEY}", "Content-Type": "application/json"},
+        json=payload, verify=TH_VERIFY, timeout=20
+    )
+    r.raise_for_status()
+    return r.json().get("id")
+
+def search_misp(ioc):
+    if not (MISP_URL and MISP_KEY and ioc): return None
+    r = requests.post(f"{MISP_URL}/events/restSearch",
+                      headers={"Authorization": MISP_KEY, "Accept":"application/json"},
+                      json={"value": ioc, "returnFormat": "json"},
+                      verify=MISP_VERIFY, timeout=20)
+    if r.status_code == 200:
+        j = r.json()
+        hits = j.get("response", [])
+        return hits[:3]
+    return None
+
+def main():
+    # Wazuh Integrator sends one alert per line in JSON when alert_format=json
+    line = sys.stdin.readline()
+    alert = json.loads(line).get("parameters",{}).get("alert",{})
+    # create the case
+    case_id = post_thehive_case(alert)
+    # simple enrichment: pull one IOC from alert if present (srcip or sha256)
+    ioc = alert.get("data",{}).get("aws",{}).get("sourceIPAddress") \
+          or alert.get("srcip") \
+          or alert.get("sha256")
+    hits = search_misp(ioc) if ioc else None
+    if hits:
+        # attach as case observable note
+        note = {"message": f"MISP matches for {ioc}: {len(hits)} (showing up to 3)."}
+        requests.post(f"{TH_URL}/api/v1/case/{case_id}/comment",
+                      headers={"Authorization": f"Bearer {TH_KEY}",
+                               "Content-Type":"application/json"},
+                      json=note, verify=TH_VERIFY, timeout=20)
+    print(f"[{datetime.utcnow().isoformat()}Z] created TheHive case {case_id}", flush=True)
+
+if __name__ == "__main__":
+    main()
