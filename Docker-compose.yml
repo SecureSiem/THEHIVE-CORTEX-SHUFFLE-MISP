@@ -1,0 +1,348 @@
+version: '3.8'
+
+networks:
+  soar-net:
+    driver: bridge
+
+volumes:
+  es_data:
+  cassandra_data:
+  thehive_conf:
+  thehive_data:
+  cortex_conf:
+  cortex_data:
+  shuffle_pgdata:
+  shuffle_apps:
+  shuffle_files:
+  shuffle_opensearch_data:
+  mariadb_data:
+  redis_data:
+  misp_data:
+  misp_upload:
+  misp_modules:
+
+services:
+  # -------------------------
+  # Elasticsearch (for TheHive)
+  # -------------------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.13
+    container_name: es_thehive
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - soar-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=50s"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  # -------------------------
+  # Cassandra (for TheHive)
+  # -------------------------
+  cassandra:
+    image: cassandra:3.11
+    container_name: cassandra
+    environment:
+      - CASSANDRA_START_RPC=true
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    ports:
+      - "9042:9042"
+    networks:
+      - soar-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+
+  # -------------------------
+  # TheHive
+  # -------------------------
+  thehive:
+    image: strangebee/thehive:5.5.7-1
+    container_name: thehive
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - THEHIVE_ADMIN_USERNAME=admin
+      - THEHIVE_ADMIN_PASSWORD=Testing123
+      - CASSANDRA_CONTACT_POINTS=cassandra
+      - CASSANDRA_PORT=9042
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - THEHIVE_HTTP_ADDRESS=0.0.0.0
+      - THEHIVE_HTTP_PORT=9000
+    volumes:
+      - thehive_conf:/etc/thehive
+      - thehive_data:/var/lib/thehive
+    ports:
+      - "9000:9000"
+    networks:
+      - soar-net
+    restart: unless-stopped
+
+  # -------------------------
+  # Cortex
+  # -------------------------
+  cortex:
+    image: thehiveproject/cortex:3.1
+    container_name: cortex
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - CORTEX_PORT=9001
+      - CORTEX_ADMIN_USERNAME=admin
+      - CORTEX_ADMIN_PASSWORD=Testing123
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    volumes:
+      - cortex_conf:/etc/cortex
+      - cortex_data:/var/lib/cortex
+    ports:
+      - "9001:9001"
+    networks:
+      - soar-net
+    restart: unless-stopped
+
+  # -------------------------
+  # Postgres (Shuffle DB)
+  # -------------------------
+  postgres:
+    image: postgres:15
+    container_name: shuffle_postgres
+    environment:
+      - POSTGRES_DB=shuffle
+      - POSTGRES_USER=shuffle
+      - POSTGRES_PASSWORD=Testing123
+    volumes:
+      - shuffle_pgdata:/var/lib/postgresql/data
+    networks:
+      - soar-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shuffle -d shuffle"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # -------------------------
+  # Redis (shared by MISP & Shuffle)
+  # -------------------------
+  redis:
+    image: redis:7
+    container_name: redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - soar-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # -------------------------
+  # Shuffle: OpenSearch
+  # -------------------------
+  shuffle-opensearch:
+    image: opensearchproject/opensearch:3.0.0
+    container_name: shuffle-opensearch
+    environment:
+      - OPENSEARCH_JAVA_OPTS=-Xms4096m -Xmx4096m
+      - bootstrap.memory_lock=true
+      - cluster.initial_master_nodes=shuffle-opensearch
+      - node.name=shuffle-opensearch
+      - discovery.seed_hosts=shuffle-opensearch
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Testing123
+      - node.store.allow_mmap=false
+      - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - shuffle_opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9201:9200"
+    networks:
+      - soar-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  # -------------------------
+  # Shuffle Backend
+  # -------------------------
+  shuffle-backend:
+    image: ghcr.io/shuffle/shuffle-backend:latest
+    container_name: shuffle-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      shuffle-opensearch:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=shuffle
+      - DATABASE_USER=shuffle
+      - DATABASE_PASSWORD=Testing123
+      - REDIS_URL=redis://redis:6379/0
+      - SHUFFLE_APP_HOTLOAD_FOLDER=/shuffle-apps
+      - SHUFFLE_FILE_LOCATION=/shuffle-files
+      - BACKEND_PORT=5001
+      - SHUFFLE_OPENSEARCH_URL=http://shuffle-opensearch:9200
+      - SHUFFLE_DEFAULT_USERNAME=admin
+      - SHUFFLE_DEFAULT_PASSWORD=Testing123
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - shuffle_apps:/shuffle-apps:z
+      - shuffle_files:/shuffle-files:z
+    ports:
+      - "5001:5001"
+    networks:
+      - soar-net
+    restart: unless-stopped
+
+  shuffle-orborus:
+    image: ghcr.io/shuffle/shuffle-orborus:latest
+    container_name: shuffle-orborus
+    depends_on:
+      shuffle-backend:
+        condition: service_started
+    environment:
+      - SHUFFLE_APP_SDK_TIMEOUT=300
+      - SHUFFLE_ORBORUS_EXECUTION_CONCURRENCY=7
+      - SHUFFLE_BACKEND_URL=http://shuffle-backend:5001
+      - SHUFFLE_WORKER_IMAGE=ghcr.io/shuffle/shuffle-worker:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - soar-net
+    restart: unless-stopped
+
+  shuffle-frontend:
+    image: ghcr.io/shuffle/shuffle-frontend:latest
+    container_name: shuffle-frontend
+    depends_on:
+      shuffle-backend:
+        condition: service_started
+    environment:
+      - BACKEND_HOSTNAME=shuffle-backend
+    ports:
+      - "3000:80"
+    networks:
+      - soar-net
+    restart: unless-stopped
+
+  # -------------------------
+  # MariaDB (for MISP)  <-- PASSWORD CONSISTENT WITH MISP
+  # -------------------------
+  mariadb:
+    image: mariadb:10.6
+    container_name: misp_db
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=misp
+      - MYSQL_USER=misp
+      - MYSQL_PASSWORD=Testing123
+      - TZ=UTC
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    # (You usually don't need to expose 3306 to the host; comment if not required)
+    ports:
+      - "3306:3306"
+    networks:
+      - soar-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+# -------------------------
+# MISP Core (HTTP only)
+# -------------------------
+  misp:
+   image: coolacid/misp-docker:core-latest
+   container_name: misp
+   depends_on:
+     mariadb:
+       condition: service_healthy
+     redis:
+       condition: service_started
+   environment:
+     # Fix the baseurl format - this was causing the rejection
+     - MISP_BASEURL=http://192.168.1.60:8080/
+     - DISABLE_SSL=true
+     - NOREDIR=true
+     - DISIPV6=true
+    
+     # Database Configuration
+     - MYSQL_HOST=mariadb
+     - MYSQL_USER=misp
+     - MYSQL_PASSWORD=Testing@123
+     - MYSQL_DATABASE=misp
+     
+     # Redis Configuration
+     - REDIS_FQDN=redis
+     - REDIS_HOST=redis
+     - REDIS_PORT=6379
+     
+     # Admin Configuration
+     - MISP_ADMIN_EMAIL=admin@local
+     - MISP_ADMIN_PASSPHRASE=This_is_our_soar
+     - MISP_ADMIN_PW=Testing123
+     
+     # Essential settings
+     - INIT=true
+     - WORKERS=1
+     - ENV_CRON_USER_ID=1
+     - CRON_USER_ID=1
+     
+     # Additional nginx/apache settings
+     - APACHE_RUN_USER=www-data
+     - APACHE_RUN_GROUP=www-data
+   volumes:
+     - misp_data:/var/www/MISP
+     - misp_upload:/var/www/MISP/app/files
+   ports:
+     - "8080:80"
+   networks:
+     - soar-net
+   restart: unless-stopped
+   healthcheck:
+     test: ["CMD-SHELL", "curl -f http://localhost/users/login || exit 1"]
+     interval: 60s
+     timeout: 30s
+     retries: 10
+     start_period: 180s
