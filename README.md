@@ -165,3 +165,40 @@ That’s all it is.
 On your Wazuh agent (or manager), make a new file:
 
     sudo nano /var/ossec/active-response/bin/send_to_shuffle.py
+
+Edit the script and add your shuffle URL
+
+2. Make it executable
+
+       sudo chmod +x /var/ossec/active-response/bin/send_to_shuffle.py
+
+3. Tell Wazuh to use it
+
+   Edit Wazuh config:
+   
+       sudo nano /var/ossec/etc/ossec.conf
+
+   Add this inside <active-response> block:
+
+       <command>
+        <name>send_to_shuffle</name>
+        <executable>send_to_shuffle.py</executable>
+        <timeout_allowed>no</timeout_allowed>
+       </command>
+
+       <active-response>
+        <command>send_to_shuffle</command>
+        <location>local</location>
+        <rules_id>100001</rules_id>   <!-- replace with the rule ID you want -->
+       </active-response>
+
+Restart Wazuh
+
+    sudo systemctl restart wazuh-manager
+
+
+# For this step 8 you need to > Create the workflow file on your server or workstation
+
+Open a terminal on the machine where you manage Shuffle (or any machine from which you can upload to Shuffle). Run this single command to create the file wazuh-to-soar-workflow.json in your current folder:
+
+
