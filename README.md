@@ -69,8 +69,41 @@ For custom integrations, Wazuh expects the script at /var/ossec/integrations/<na
     sudo nano /var/ossec/integrations/custom-thehive
 
     
+# 5. Permissions:
+        sudo chmod 750 /var/ossec/integrations/custom-thehive
+        sudo chown root:wazuh /var/ossec/integrations/custom-thehive
+        sudo chmod 640 /var/ossec/integrations/soar.env
+        sudo chown root:wazuh /var/ossec/integrations/soar.env
 
 
+# 6. Wire it in Wazuh (no systemd vars)
 
-    
+Edit the manager config:
+
+        sudo nano /var/ossec/etc/ossec.conf
+
+Add inside <ossec_config>:
+
+        <integration>
+        <name>custom-thehive</name>
+        <alert_format>json</alert_format>
+
+        <!-- Choose one of the filters below -->
+
+        <!-- Option A: Only high severity -->
+        <level>10</level>
+
+        <!-- Option B: Only specific rules (comma-separated) -->
+        <!-- <rule_id>5715,5716,60110</rule_id> -->
+
+        <!-- Option C: Only a group (e.g., syscheck or malware) -->
+        <!-- <group>syscheck</group> -->
+        </integration>
+
+This is using the Integrator “custom” path; the <name> maps directly to /var/ossec/integrations/custom-thehive and alert_format=json makes Wazuh send JSON to the script.
+
+Restart Wazuh manager:
+
+    sudo systemctl restart wazuh-manager
+    sudo tail -f /var/ossec/logs/integrations.log
 
