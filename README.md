@@ -56,16 +56,20 @@ Login: admin / Testing123. We’ll import a ready workflow later.
 We’ll put a tiny Python script + .env on the Wazuh Manager that receives alerts and talks to TheHive/MISP/Cortex. This uses Wazuh’s Integrator with a custom script (name must start with custom-).
 
     1. Install Python deps on the Wazuh manager
-    ```
+    
     # on the Wazuh manager host
     sudo /var/ossec/framework/python/bin/pip3 install requests python-dotenv
-    ```
+    
 
 Add soar.env To manager path - /var/ossec/integrations
 
+# 4. Add the integration script -
+For custom integrations, Wazuh expects the script at /var/ossec/integrations/<name> and <name> in ossec.conf must start with custom-. We’ll name it custom-thehive.
 
+    sudo nano /var/ossec/integrations/custom-thehive
 
-  
+    
+
 
 
     
