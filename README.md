@@ -281,4 +281,4 @@ Shuffle versions and installs may expect a slightly different JSON structure. If
 
 1. Open the workflow editor and I will guide you to recreate it with drag & drop (super easy).
 
-2. Or paste the specific error message here and I’ll fix the JSON format for your Shuffle version.
+2. Or connect with me and share the specific error message here and I’ll fix the JSON format for your Shuffle version.
