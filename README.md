@@ -199,6 +199,86 @@ Restart Wazuh
 
 # For this step 8 you need to > Create the workflow file on your server or workstation
 
-Open a terminal on the machine where you manage Shuffle (or any machine from which you can upload to Shuffle). Run this single command to create the file wazuh-to-soar-workflow.json in your current folder:
+Open a terminal on the machine where you manage Shuffle (or any machine from which you can upload to Shuffle). Run this single command to create the file wazuh-to-soar-workflow.json in your current folder: (copy and paste to terminal the coomand inside # wazuh-to-soar-workflow
+
+After that command completes, you will have a file named wazuh-to-soar-workflow.json in your current directory. You can verify:
+
+    ls -l wazuh-to-soar-workflow.json
+
+in this json much changes :
+
+# Change these:
+
+# TheHive
+
+thehive_url → your TheHive server URL, e.g.
+http://192.168.1.60:9000
+
+thehive_api_key → API key you created in TheHive.
+
+$ MISP
+
+misp_url → your MISP URL, e.g.
+http://192.168.1.70:8080
+
+misp_api_key → API key from MISP (you create it in MISP UI).
+
+# Cortex
+
+cortex_url → your Cortex URL, e.g.
+http://192.168.1.80:9001
+
+cortex_api_key → API key or username/password token from Cortex.
+
+cortex_analyzers → list of analyzers you want to run.
+(In Cortex UI, check available analyzers; adjust names if needed.)
+
+# (Optional) tlp → Traffic Light Protocol classification (default 2 = Amber).
+
+# (Optional) default_tags → tags that will appear in TheHive case.
+
+⚡ Steps after saving
+
+1. Save the file as wazuh-to-soar-workflow.json.
+
+2. Go to Shuffle → Workflows → Import workflow → Upload JSON.
+
+3. Shuffle will load the workflow with nodes already built.
+
+4. Check the config, replace <...> with your real URLs and keys.
+
+5. Save workflow, then get the Webhook URL from the trigger node.
+
+6. Configure your Wazuh script/integration to POST alerts to that Webhook.
 
 
+# 9. Get the Webhook URL from the imported workflow
+
+Open the imported workflow in Shuffle.
+
+Click the Webhook trigger node (first node).
+
+Shuffle will show you a generated Webhook URL (something like http://<shuffle-ip>:5001/api/v1/hooks/<id>).
+
+Copy that URL.
+
+
+# 10. Make Wazuh send alerts to Shuffle (simplest way)
+
+You already have send_to_shuffle.py idea earlier. Replace the SHUFFLE_WEBHOOK variable with the Webhook URL you copied. Put the script on the Wazuh manager or agent that will forward alerts and configure Wazuh integrator to call that script for the rules you want.
+
+URl PUT IN THIS SCRIPT:
+
+    /var/ossec/integrations/send_to_shuffle.py
+
+
+
+# BONUS
+
+# If import fails or shuffle expects another schema
+
+Shuffle versions and installs may expect a slightly different JSON structure. If the import gives an error:
+
+1. Open the workflow editor and I will guide you to recreate it with drag & drop (super easy).
+
+2. Or paste the specific error message here and I’ll fix the JSON format for your Shuffle version.
