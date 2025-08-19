@@ -61,7 +61,7 @@ We’ll put a tiny Python script + .env on the Wazuh Manager that receives alert
     sudo /var/ossec/framework/python/bin/pip3 install requests python-dotenv
     
 
-Add soar.env To manager path - /var/ossec/integrations
+# Add soar.env To manager path - /var/ossec/integrations  (after this edit the values in soar.env)
 
 # 4. Add the integration script -
 For custom integrations, Wazuh expects the script at /var/ossec/integrations/<name> and <name> in ossec.conf must start with custom-. We’ll name it custom-thehive.
